@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Typecheck, audit and build
+    name: Typecheck, test, audit and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -40,6 +40,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
 
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level=high
