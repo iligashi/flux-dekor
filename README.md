@@ -96,7 +96,7 @@ flowchart LR
 
 ## Security
 
-Every API route validates its input with Zod. Prices are computed on the server. Every table has RLS. The service-role key is server-only (`server-only` guard). Pages ship a strict CSP and HSTS. `proxy.ts` rejects cross-site writes, and checkout, cart, wishlist and uploads are rate-limited. Uploads are checked by file signature.
+Every API route validates its input with Zod. Prices are computed on the server. Every table has RLS. The service-role key is server-only (`server-only` guard). Pages ship a strict CSP and HSTS. `proxy.ts` rejects cross-site writes, and checkout, cart, wishlist and uploads are rate-limited. Uploads are checked by file signature. If the database rate limiter is unavailable, requests fall back to a per-instance in-memory limit and the outage is logged, rather than being allowed without limit.
 
 See **[SECURITY.md](SECURITY.md)** for the full list of controls, the dashboard settings checklist and how to report a vulnerability.
 
@@ -206,7 +206,7 @@ components/
 lib/
 ├── auth/admin.ts             requireAdminPage / requireAdminApi
 ├── catalog.ts                Category tree, counts, safe category filters
-├── rate-limit.ts             Database-backed rate limiter
+├── rate-limit.ts             Database-backed rate limiter (in-memory fallback)
 ├── shop-config.ts            Business rules shared by the UI and the server
 ├── supabase/                 Browser, server and service-role clients
 └── validation/               Zod schemas and sanitisers

@@ -2,6 +2,7 @@ import "server-only"
 import { createHash } from "node:crypto"
 import { NextResponse } from "next/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import { createMemoryRateLimiter, createOutageReporter } from "@/lib/rate-limit-memory"
 
 /** Limits per action: `limit` requests per `windowSeconds`, per client. */
 export const RATE_LIMITS = {
@@ -24,19 +25,33 @@ export function clientIp(request: Request): string {
   return forwarded?.split(",")[0]?.trim() || "unknown"
 }
 
-let warnedMissing = false
+const memoryHit = createMemoryRateLimiter()
+// console.error is what Vercel log drains / alerts pick up
+const reportOutage = createOutageReporter((message) => console.error(message))
+
+function tooManyRequests(windowSeconds: number) {
+  return NextResponse.json(
+    { error: "Shumë kërkesa. Ju lutem provoni përsëri pas pak minutash." },
+    { status: 429, headers: { "Retry-After": String(windowSeconds) } },
+  )
+}
 
 /**
  * Returns a 429 response when the client has exceeded the limit for `action`,
  * or null when the request may continue. IPs are hashed before storage.
  *
- * Fails open (allows the request) if the database function is missing or the
- * check errors, so a misconfiguration can never take checkout down.
+ * The shared limit lives in Postgres (check_rate_limit). If that check fails
+ * the request is still limited by a per-instance in-memory counter instead of
+ * being allowed unconditionally, and the outage is logged (throttled) so it is
+ * visible in monitoring. Checkout keeps working during a limiter outage.
  */
 export async function rateLimit(request: Request, action: RateLimitAction, subject?: string): Promise<NextResponse | null> {
   const { limit, windowSeconds } = RATE_LIMITS[action]
   const who = subject ?? clientIp(request)
   const key = `${action}:${createHash("sha256").update(who).digest("hex").slice(0, 32)}`
+
+  // Always count locally too, so an outage does not hand out a fresh budget
+  const allowedLocally = memoryHit(key, limit, windowSeconds)
 
   try {
     const { data, error } = await createServiceRoleClient().rpc("check_rate_limit", {
@@ -44,22 +59,13 @@ export async function rateLimit(request: Request, action: RateLimitAction, subje
       p_limit: limit,
       p_window_seconds: windowSeconds,
     })
-    if (error) {
-      if (!warnedMissing) {
-        warnedMissing = true
-        console.warn("[rate-limit] check_rate_limit unavailable — apply scripts/009_rate_limits_and_stock.sql:", error.message)
-      }
-      return null
+    if (error || typeof data !== "boolean") {
+      reportOutage(error?.message ?? "unexpected response from check_rate_limit (apply scripts/009_rate_limits_and_stock.sql)")
+      return allowedLocally ? null : tooManyRequests(windowSeconds)
     }
-    if (data === false) {
-      return NextResponse.json(
-        { error: "Shumë kërkesa. Ju lutem provoni përsëri pas pak minutash." },
-        { status: 429, headers: { "Retry-After": String(windowSeconds) } },
-      )
-    }
-    return null
+    return data && allowedLocally ? null : tooManyRequests(windowSeconds)
   } catch (error) {
-    console.error("[rate-limit] check failed:", error)
-    return null
+    reportOutage(error instanceof Error ? error.message : String(error))
+    return allowedLocally ? null : tooManyRequests(windowSeconds)
   }
 }

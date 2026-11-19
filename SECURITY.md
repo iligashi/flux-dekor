@@ -29,7 +29,7 @@ Only the `main` branch, which is deployed to [flux-dekor.com](https://flux-dekor
 | **CSRF** | Session cookies are `SameSite=Lax`, and `proxy.ts` rejects state-changing `/api` requests from other origins. |
 | **XSS and clickjacking** | A strict Content-Security-Policy, `X-Frame-Options: DENY`, `frame-ancestors 'none'`, and escaped JSON-LD. No user HTML is ever rendered. |
 | **Transport** | HSTS (2 years, preload), `upgrade-insecure-requests`, and Cross-Origin-Opener-Policy. |
-| **Abuse** | Database-backed rate limits on checkout, cart, wishlist and uploads. IPs are stored only as hashes. A honeypot field filters checkout bots. |
+| **Abuse** | Database-backed rate limits on checkout, cart, wishlist and uploads, with an in-memory per-instance fallback (and a logged alert) if the database check fails. IPs are stored only as hashes. A honeypot field filters checkout bots. |
 | **Uploads** | Admin only. Only JPG, PNG, WebP, AVIF and GIF, verified by the file's magic bytes. 4.5 MB maximum. The server picks the file name and extension. |
 | **Caching** | API responses are `Cache-Control: private, no-store`, except the public category list. |
 | **Dependencies** | Pinned versions, a patched lockfile, and a CI job that fails on known vulnerabilities. Dependabot keeps dependencies and Actions up to date. |
